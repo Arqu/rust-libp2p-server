@@ -9,7 +9,7 @@ use libp2p::kad;
 use libp2p::metrics::{Metrics, Recorder};
 use libp2p::noise;
 use libp2p::swarm::{SwarmBuilder, SwarmEvent};
-use libp2p::tcp::{GenTcpConfig, TcpTransport};
+use libp2p::tcp::{GenTcpConfig, TokioTcpTransport};
 use libp2p::Transport;
 use libp2p::{identity, PeerId};
 use log::{debug, info};
@@ -50,7 +50,8 @@ struct Opt {
     enable_autonat: bool,
 }
 
-fn main() -> Result<(), Box<dyn Error>> {
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn Error>> {
     env_logger::init();
 
     let opt = Opt::from_args();
@@ -79,8 +80,14 @@ fn main() -> Result<(), Box<dyn Error>> {
     };
     println!("Local peer id: {:?}", local_peer_id);
 
-    let transport = TcpTransport::new(GenTcpConfig::new());
-    let transport = block_on(dns::DnsConfig::system(transport)).unwrap();
+    // let transport = TcpTransport::new(GenTcpConfig::new());
+    let tcp_config = libp2p::tcp::GenTcpConfig::default();
+    //  let transport = libp2p::tokio_development_transport(local_keypair.clone())?;
+    let transport = libp2p::tcp::TokioTcpTransport::new(tcp_config.clone());
+    let dns_cfg = dns::ResolverConfig::cloudflare();
+    let dns_opts = dns::ResolverOpts::default();
+    let transport = dns::TokioDnsConfig::custom(transport, dns_cfg, dns_opts).unwrap();
+    // let transport = block_on(dns::DnsConfig::system(transport)).unwrap();
     let noise_keys = noise::Keypair::<noise::X25519Spec>::new()
         .into_authentic(&local_keypair)
         .expect("Signing libp2p-noise static DH keypair failed.");
@@ -97,10 +104,10 @@ fn main() -> Result<(), Box<dyn Error>> {
     );
     let mut swarm = SwarmBuilder::new(transport, behaviour, local_peer_id)
         .executor(Box::new(|fut| {
-            async_std::task::spawn(fut);
+            tokio::spawn(fut);
         }))
         .build();
-    swarm.listen_on("/ip4/0.0.0.0/tcp/4001".parse()?)?;
+    swarm.listen_on("/ip4/0.0.0.0/tcp/4004".parse()?)?;
 
     let mut metric_registry = Registry::default();
     let metrics = Metrics::new(&mut metric_registry);
